@@ -1,0 +1,335 @@
+/*******************************************************************************
+ * Copyright (c) 2013-2014 Matteo Collina
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * and Eclipse Distribution License v1.0 which accompany this distribution.
+ *
+ * The Eclipse Public License is available at 
+ *    http://www.eclipse.org/legal/epl-v10.html
+ * and the Eclipse Distribution License is available at 
+ *   http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * Contributors:
+ *    Matteo Collina - initial API and implementation and/or initial documentation
+ *******************************************************************************/
+
+var coap = require('coap');
+var rRegexp = /^\/r\/(.+)$/;
+var callback = require("callback-stream");
+var mongoback= require('./oliot/backend');
+var topicParser= require('./oliot/topicParser');
+var queryString=require("querystring");
+var thatGlob;
+var reqLocal;
+function CoAP(opts, done) {
+  if (!(this instanceof CoAP)) {
+    return new CoAP(opts, done);
+  }
+
+  if (typeof opts === "function") {
+    cb = opts;
+    opts = {};
+  }
+
+  var that = this;
+  thatGlob=this;
+  this._persistence = opts.ponte.persistence;
+  this._broker = opts.ponte.broker;
+  this._ponte = opts.ponte;
+  
+  if (typeof opts.authenticate === "function") {
+    this.authenticate = opts.authenticate;
+  }
+  
+  if (typeof opts.authorizeGet === "function") {
+    this.authorizeGet = opts.authorizeGet;
+  }
+  
+  if (typeof opts.authorizePut === "function") {
+    this.authorizePut = opts.authorizePut;
+  }
+
+  var logger = this._logger = opts.ponte.logger.child({ service: 'CoAP' });
+  //console.log("req.url :-"+ req.url);
+  //console.log("opts:-",opts);
+  this.server = coap.createServer(function handler(req, res) {
+	  var match = req.url.match(rRegexp);
+    
+    var topic;
+
+    req.on('error', function(err) {
+      logger.info(err);
+    });
+
+    res.on('error', function(err) {
+      logger.info(err);
+    });
+
+    logger.info({ url: req.url, code: req.code, sender: req.rsinfo, headers: req.headers }, 'request received');
+
+    if (match) {
+    	//console.log("match:-", match);
+      topic = match[1];
+      that.authenticate(req, function(err, authenticated, subject) {
+        if (err) {
+        	console.log("error has occured");
+          that._handleAuthError(err, res);
+          return;
+        }
+        
+        if (!authenticated) {
+        	console.log("outentication problem");
+          that._handleNotAuthenticated(res);
+          return;
+        }
+        console.log("req.method:-", req.method);
+        
+        
+        if (req.method === 'GET') {
+          that.authorizeGet(subject, topic, function(err, authorized) {
+            if (err) {
+              that._handleAuthError(err, res);
+              return;
+            }
+            
+            if (!authorized) {
+              that._handleNotAuthorized(res);
+              return;
+            }
+            reqLocal=req;
+            var indexoic= topic.indexOf("oic");
+            var indexlwm2m= topic.indexOf("lwm2m");
+            var topcArray=topic.split("/");
+            if(indexoic>-1){
+            	console.log("oic");
+          	  var resourceoic={service:topcArray[1], attribute:topcArray[2]};
+          	mongoback.selectFromDbBackGET(topic, res,"oic",resourceoic,handleSearchResultGET);
+            }else if(indexlwm2m>-1){
+            	console.log("lwm2m");
+          	  var resourcelwm2m={service:topcArray[1], attribute:topcArray[2]};
+          	mongoback.selectFromDbBackGET(topic, res, "lwm2m",resourcelwm2m,handleSearchResultGET);
+            }else{
+            	that._handleGET(topic, req, res);
+            }
+            //that._handleGET(topic, req, res);
+          });
+        } else if(req.method==='PUT'){
+        	console.log("in side coap put");
+          req.pipe(callback(function(err, payload) {
+            payload = Buffer.concat(payload);
+            
+            that.authorizePut(subject, topic, payload, function(err, authorized) {
+              if (err) {
+                that._handleAuthError(err, res);
+                return;
+              }
+              
+              if (!authorized) {
+                that._handleNotAuthorized(res);
+                return;
+              }
+              var indexoic= topic.indexOf("oic");
+              var indexlwm2m= topic.indexOf("lwm2m");
+              var topcArray=topic.split("/");
+              if(indexoic>-1){
+            	  var resourceoic={service:topcArray[1], attribute:topcArray[2]};
+            	  mongoback.selectFromDbBack(topic, payload, res,"oic",resourceoic,handleSearchResultPUT);
+              }else if(indexlwm2m>-1){
+            	  var resourcelwm2m={service:topcArray[1], attribute:topcArray[2]};
+            	  mongoback.selectFromDbBack(topic, payload, res, "lwm2m",resourcelwm2m,handleSearchResultPUT);
+              }else{
+            	  that._handlePUT(topic, payload, res);
+              }
+              //that._handlePUT(topic, payload, res);
+            });
+            
+          }));
+        }
+      });
+    } else {
+      res.statusCode = '4.04';
+      res.end();
+    }
+  });
+
+  this.server.listen(opts.port, opts.host, function(err) {
+    done(err, that);
+    logger.info({ port: opts.port }, "server started");
+  });
+}
+
+CoAP.prototype.close = function(done) {
+  this.server.close(done);
+};
+
+CoAP.prototype._handleGET = function(topic, req, res) {
+  var that = this;
+  var deliver = 'end';
+  var logger = this._logger;
+  var cb = function(topic, payload) {
+    logger.debug({ url: req.url, code: req.code, sender: req.rsinfo }, 'sending update');
+    res.write(payload);
+  };
+  console.log("topic :-"+topic);
+  if(topic.indexOf("?")>-1){
+	  
+	  if(topic.indexOf("masterdata")>-1){
+		  console.log("search for master data");
+		  topicParser.getMasterdataMod(res, topic, "coap");
+	  }else{
+		  console.log("search for topic");
+		  var searchword=topic.substr(topic.indexOf("?")+9);
+		  console.log(searchword);
+		 // mongoback.searchForKeywordback("200","res",handleresultMaster);
+		  mongoback.searchForKeywordback("200",res,"coap");
+		  //mongoback.selectFromPubSubBack(topic, res);
+	  }
+	  
+  }else{
+  that._persistence.lookupRetained(topic, function(err, packets) {
+    if (packets.length === 0) {
+      logger.info({ url: req.url, code: req.code, sender: req.rsinfo }, 'not found');
+      res.statusCode = '4.04';
+      return res.end();
+    }
+
+    if (req.headers.Observe === 0) {
+      logger.debug({ url: req.url, code: req.code, sender: req.rsinfo }, 'registering for topic');
+
+      deliver = 'write';
+      that._broker.subscribe(topic, cb);
+
+      req.on('error', function() {
+        that._broker.unsubscribe(topic, cb);
+      });
+
+      res.on('finish', function() {
+        that._broker.unsubscribe(topic, cb);
+      });
+    }
+
+    logger.debug({ url: req.url, code: req.code, sender: req.rsinfo }, 'delivering retained');
+
+    res[deliver](packets[0].payload);
+    console.log("res 2:-", res);
+    console.log("packet pay load:-",packets[0].payload);
+    
+  });
+  }
+};
+
+CoAP.prototype._handlePUT = function(topic, payload, res) {
+  var that = this;
+  if(topic.indexOf("masterdata")>-1){
+	  console.log("payload");
+	  
+	  console.log(payload.toString());
+	  var vart=payload.toString();
+	  try{
+		  var resource=JSON.parse(vart);
+		  mongoback.insertResourcesMasterdataBack("masterData", resource, res,"coap");
+		 
+	  }catch(ex){
+		  console.log("error");
+		  res.statusCode = '4.04';
+	      res.end();
+	  }
+	  
+  }else{
+	  var packet = { topic: topic, payload: payload, retain: true };
+	  console.log("packet",packet);
+	  that._persistence.storeRetained(packet, function() {
+	    that._broker.publish(topic, payload, {}, function() {
+	      res.setOption('Location-Path', '/r/' + topic);
+	      res.statusCode = '2.04';
+	      res.end();
+
+	      that._ponte.emit('updated', topic, payload);
+	    });
+	  });  
+  }
+  
+  
+};
+
+
+/**
+ * The function that will be used to authenticate requests.
+ * This default implementation authenticates everybody.
+ * The returned subject is just a new Object.
+ *
+ * @param {Object} req The incoming message @link https://github.com/mcollina/node-coap#incoming
+ * @param {Function} cb The callback function. Has the following structure: cb(err, authenticated, subject)
+ */
+CoAP.prototype.authenticate = function(req, cb) {
+  cb(null, true, {});
+};
+
+/**
+ * The function that will be used to authorize subjects to GET messages from topics.
+ * This default implementation authorizes everybody.
+ * 
+ * @param {Object} subject The subject returned by the authenticate function
+ * @param {string} topic The topic
+ * @param {Function} cb The callback function. Has the following structure: cb(err, authorized)
+ */
+CoAP.prototype.authorizeGet = function(subject, topic, cb) {
+  cb(null, true);
+};
+
+/**
+ * The function that will be used to authorize subjects to PUT messages to topics.
+ * This default implementation authorizes everybody.
+ * 
+ * @param {Object} subject The subject returned by the authenticate function
+ * @param {string} topic The topic
+ * @param {Buffer} payload The payload
+ * @param {Function} cb The callback function. Has the following structure: cb(err, authorized)
+ */
+CoAP.prototype.authorizePut = function(subject, topic, payload, cb) {
+  cb(null, true);
+};
+
+CoAP.prototype._handleAuthError = function(err, res) {
+  this._logger.info(err);
+  res.statusCode = '5.00';
+  res.end();
+};
+
+CoAP.prototype._handleNotAuthenticated = function(res) {
+  this._logger.info('authentication denied');
+  res.statusCode = '4.01';
+  res.end();
+};
+
+CoAP.prototype._handleNotAuthorized = function(res) {
+  this._logger.info('not authorized');
+  res.statusCode = '4.03';
+  res.end();
+};
+
+handleSearchResultPUT=function (err, result){
+	if(err){
+		console.error(err.stack || err.message);
+		return;
+	}
+	console.log("inside handleSearchResultPUT");
+	//console.log("inside handel search", result);
+	//returnedResult= result;
+	thatGlob._handlePUT(result.topic, result.payload, result.res);
+	//callback(null,result);
+	
+};
+
+handleSearchResultGET=function (err, result){
+	if(err){
+		console.error(err.stack || err.message);
+		return;
+	}
+	console.log("inside handleSearchResultGETCOAP");
+	thatGlob._handleGET(result.topic, reqLocal, result.res);
+};
+
+
+
+module.exports = CoAP;
