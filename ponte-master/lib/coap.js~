@@ -19,6 +19,10 @@ var callback = require("callback-stream");
 var mongoback= require('./oliot/backend');
 var topicParser= require('./oliot/topicParser');
 var queryString=require("querystring");
+
+var os = require( 'os' );
+var request = require('request');
+
 var thatGlob;
 var reqLocal;
 function CoAP(opts, done) {
@@ -228,6 +232,65 @@ CoAP.prototype._handlePUT = function(topic, payload, res) {
 	  try{
 		  var resource=JSON.parse(vart);
 		  mongoback.insertResourcesMasterdataBack("masterData", resource, res,"coap");
+ //Descovery
+		  
+		  var ifaces = os.networkInterfaces( );
+    		var ifacesadress;      		
+    		'use strict';
+    		Object.keys(ifaces).forEach(function (ifname) {
+    		  var alias = 0;
+
+    		  ifaces[ifname].forEach(function (iface) {
+    		    if ('IPv4' !== iface.family || iface.internal !== false) {
+    		      // skip over internal (i.e. 127.0.0.1) and non-ipv4 addresses
+    		      return;
+    		    }
+
+    		    if (alias >= 1) {
+    		      // this single interface has multiple ipv4 addresses
+    		     // console.log(ifname + ':' + alias, iface.address);
+    		    ifacesadress=iface.address;
+    		    } else {
+    		      // this interface has only one ipv4 adress
+    		     // console.log(ifname, iface.address);
+    		    ifacesadress=iface.address;
+    		    }
+    		    ++alias;
+    		  });
+    		});
+
+    		
+    		var d = new Date();
+    		var timestamp=d.toISOString();
+    		
+    		
+    		 var discoveryData = 
+    		{        "thingname":resource.id,   
+    			       "data":{    "epcis_address":"onsepc.kr",           
+    			        "timestamp":timestamp,        
+    			        "thing_address":ifacesadress,             
+    			        "location":[127.384462,36.350377]          
+    			         }   
+    			};
+    		
+    		
+    		 
+    		request( {
+				url:     'http://143.248.53.241:3001/register',
+				method: 'POST',
+				json: discoveryData
+			},  function (error, response_, body) {
+    			        if (!error && response_.statusCode == 200) {
+    			            
+    			        }else{
+    			        	console.log(error);
+    			        	console.log(response_.statusCode);
+    			        	
+    			        }
+    			    }
+    			);
+		  
+		  //Des
 		 
 	  }catch(ex){
 		  console.log("error");
