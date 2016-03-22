@@ -154,6 +154,19 @@ function CoAP(opts, done) {
             });
             
           }));
+        } else if(req.method==='DELETE'){
+        	console.log('Delete 1');
+        	console.log(topic);
+        	//that._handleDELETE(topic, payload, res);
+        	console.log('Delete 2');
+        	if(topic.indexOf("masterdata")>-1){
+       		  console.log("inside coap delete");
+       		  var resource=topic.substring(topic.indexOf("id")+3);
+       		  mongoback.deleteResourcesMasterdataBack("masterData", resource, res,"coap");
+       		    
+       		 // res.statusCode = '200';
+        	     // res.end("Delete");
+       	  }
         }
       });
     } else {
@@ -226,6 +239,18 @@ CoAP.prototype._handleGET = function(topic, req, res) {
     
   });
   }
+};
+
+CoAP.prototype._handleDELETE = function(topic, payload, res) {
+	console.log('Delete 2');
+	 if(topic.indexOf("masterdata")>-1){
+		  console.log("inside coap delete");
+		  var resource=topic.substring(topic.indexOf("id")+3);
+		  mongoback.deleteResourcesMasterdataBack("masterData", resource, res,"coap");
+		    
+		 // res.statusCode = '200';
+ 	     // res.end("Delete");
+	  }
 };
 
 CoAP.prototype._handlePUT = function(topic, payload, res) {

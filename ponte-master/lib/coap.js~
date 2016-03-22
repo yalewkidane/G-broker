@@ -23,8 +23,10 @@ var queryString=require("querystring");
 var os = require( 'os' );
 var request = require('request');
 
+
 var thatGlob;
 var reqLocal;
+
 function CoAP(opts, done) {
   if (!(this instanceof CoAP)) {
     return new CoAP(opts, done);
@@ -105,20 +107,22 @@ function CoAP(opts, done) {
             var indexlwm2m= topic.indexOf("lwm2m");
             var topcArray=topic.split("/");
             if(indexoic>-1){
-            	console.log("oic");
+            	//console.log("oic");
           	  var resourceoic={service:topcArray[1], attribute:topcArray[2]};
-          	mongoback.selectFromDbBackGET(topic, res,"oic",resourceoic,handleSearchResultGET);
+          	//mongoback.selectFromDbBackGET(topic, res,"oic",resourceoic,handleSearchResultGET);
+      	    mongoback.selectFromRedisBackGET(topic, res,resourceoic,handleSearchResultGET);
             }else if(indexlwm2m>-1){
-            	console.log("lwm2m");
+            	//console.log("lwm2m");
           	  var resourcelwm2m={service:topcArray[1], attribute:topcArray[2]};
-          	mongoback.selectFromDbBackGET(topic, res, "lwm2m",resourcelwm2m,handleSearchResultGET);
+          	//mongoback.selectFromDbBackGET(topic, res, "lwm2m",resourcelwm2m,handleSearchResultGET);
+          	  mongoback.selectFromRedisBackGET(topic, res,resourcelwm2m,handleSearchResultGET);
             }else{
             	that._handleGET(topic, req, res);
             }
             //that._handleGET(topic, req, res);
           });
         } else if(req.method==='PUT'){
-        	console.log("in side coap put");
+        	//console.log("in side coap put");
           req.pipe(callback(function(err, payload) {
             payload = Buffer.concat(payload);
             
@@ -137,10 +141,12 @@ function CoAP(opts, done) {
               var topcArray=topic.split("/");
               if(indexoic>-1){
             	  var resourceoic={service:topcArray[1], attribute:topcArray[2]};
-            	  mongoback.selectFromDbBack(topic, payload, res,"oic",resourceoic,handleSearchResultPUT);
+            	  //mongoback.selectFromDbBack(topic, payload, res,"oic",resourceoic,handleSearchResultPUT);
+            	  mongoback.selectFromRedisDbBack(topic, payload, res,resourceoic,handleSearchResultPUT);
               }else if(indexlwm2m>-1){
             	  var resourcelwm2m={service:topcArray[1], attribute:topcArray[2]};
-            	  mongoback.selectFromDbBack(topic, payload, res, "lwm2m",resourcelwm2m,handleSearchResultPUT);
+            	  //mongoback.selectFromDbBack(topic, payload, res, "lwm2m",resourcelwm2m,handleSearchResultPUT);
+            	  mongoback.selectFromRedisDbBack(topic, payload, res,resourcelwm2m,handleSearchResultPUT);
               }else{
             	  that._handlePUT(topic, payload, res);
               }
@@ -174,18 +180,18 @@ CoAP.prototype._handleGET = function(topic, req, res) {
     logger.debug({ url: req.url, code: req.code, sender: req.rsinfo }, 'sending update');
     res.write(payload);
   };
-  console.log("topic :-"+topic);
+  //console.log("topic :-"+topic);
   if(topic.indexOf("?")>-1){
 	  
 	  if(topic.indexOf("masterdata")>-1){
-		  console.log("search for master data");
+		  //console.log("search for master data");
 		  topicParser.getMasterdataMod(res, topic, "coap");
 	  }else{
-		  console.log("search for topic");
+		  //console.log("search for topic");
 		  var searchword=topic.substr(topic.indexOf("?")+9);
-		  console.log(searchword);
+		  //console.log(searchword);
 		 // mongoback.searchForKeywordback("200","res",handleresultMaster);
-		  mongoback.searchForKeywordback("200",res,"coap");
+		  mongoback.searchForKeywordback(searchword,res,"coap");
 		  //mongoback.selectFromPubSubBack(topic, res);
 	  }
 	  
@@ -213,10 +219,10 @@ CoAP.prototype._handleGET = function(topic, req, res) {
     }
 
     logger.debug({ url: req.url, code: req.code, sender: req.rsinfo }, 'delivering retained');
-
+    //console
     res[deliver](packets[0].payload);
-    console.log("res 2:-", res);
-    console.log("packet pay load:-",packets[0].payload);
+    //console.log("res 2:-", res);
+    //console.log("packet pay load:-",packets[0].payload);
     
   });
   }
@@ -225,14 +231,16 @@ CoAP.prototype._handleGET = function(topic, req, res) {
 CoAP.prototype._handlePUT = function(topic, payload, res) {
   var that = this;
   if(topic.indexOf("masterdata")>-1){
-	  console.log("payload");
+	  //console.log("payload");
 	  
-	  console.log(payload.toString());
+	  //console.log(payload.toString());
 	  var vart=payload.toString();
 	  try{
 		  var resource=JSON.parse(vart);
 		  mongoback.insertResourcesMasterdataBack("masterData", resource, res,"coap");
- //Descovery
+		  
+		  
+		  //Descovery
 		  
 		  var ifaces = os.networkInterfaces( );
     		var ifacesadress;      		
@@ -300,7 +308,7 @@ CoAP.prototype._handlePUT = function(topic, payload, res) {
 	  
   }else{
 	  var packet = { topic: topic, payload: payload, retain: true };
-	  console.log("packet",packet);
+	  //console.log("packet",packet);
 	  that._persistence.storeRetained(packet, function() {
 	    that._broker.publish(topic, payload, {}, function() {
 	      res.setOption('Location-Path', '/r/' + topic);
@@ -376,7 +384,7 @@ handleSearchResultPUT=function (err, result){
 		console.error(err.stack || err.message);
 		return;
 	}
-	console.log("inside handleSearchResultPUT");
+	//console.log("inside handleSearchResultPUT");
 	//console.log("inside handel search", result);
 	//returnedResult= result;
 	thatGlob._handlePUT(result.topic, result.payload, result.res);
@@ -389,10 +397,72 @@ handleSearchResultGET=function (err, result){
 		console.error(err.stack || err.message);
 		return;
 	}
-	console.log("inside handleSearchResultGETCOAP");
-	thatGlob._handleGET(result.topic, reqLocal, result.res);
+	//console.log("inside handleSearchResultGETCOAP");
+	//thatGlob._handleGET(result.topic, reqLocal, result.res);
+	
+   ////////*******
+	console.log("***********************************************************************************");
+	  var that = thatGlob;
+	  var deliver = 'end';
+	  var logger = thatGlob._logger;
+	  var topic=result.topic;
+	  var req=reqLocal;
+	  var res=result.res;
+	  var cb = function(topic, payload) {
+	    logger.debug({ url: req.url, code: req.code, sender: req.rsinfo }, 'sending update');
+	    res.write(payload);
+	  };
+	  //console.log("topic :-"+topic);
+	  if(topic.indexOf("?")>-1){
+		  
+		  if(topic.indexOf("masterdata")>-1){
+			  //console.log("search for master data");
+			  topicParser.getMasterdataMod(res, topic, "coap");
+		  }else{
+			  //console.log("search for topic");
+			  var searchword=topic.substr(topic.indexOf("?")+9);
+			  //console.log(searchword);
+			 // mongoback.searchForKeywordback("200","res",handleresultMaster);
+			  mongoback.searchForKeywordback(searchword,res,"coap");
+			  //mongoback.selectFromPubSubBack(topic, res);
+		  }
+		  
+	  }else{
+	  that._persistence.lookupRetained(topic, function(err, packets) {
+	    if (packets.length === 0) {
+	      logger.info({ url: req.url, code: req.code, sender: req.rsinfo }, 'not found');
+	      res.statusCode = '4.04';
+	      return res.end();
+	    }
+
+	    if (req.headers.Observe === 0) {
+	      logger.debug({ url: req.url, code: req.code, sender: req.rsinfo }, 'registering for topic');
+
+	      deliver = 'write';
+	      that._broker.subscribe(topic, cb);
+
+	      req.on('error', function() {
+	        that._broker.unsubscribe(topic, cb);
+	      });
+
+	      res.on('finish', function() {
+	        that._broker.unsubscribe(topic, cb);
+	      });
+	    }
+
+	    logger.debug({ url: req.url, code: req.code, sender: req.rsinfo }, 'delivering retained');
+	    //console
+	    res[deliver](packets[0].payload);
+	    //console.log("res 2:-", res);
+	    //console.log("packet pay load:-",packets[0].payload);
+	    
+	  });
+	  }
+	  
+	  ////////*******
 };
 
 
 
 module.exports = CoAP;
+

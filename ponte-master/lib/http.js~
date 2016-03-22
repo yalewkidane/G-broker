@@ -24,7 +24,6 @@ var topicParser= require('./oliot/topicParser');
 
 var os = require( 'os' );
 var request = require('request');
-
 var persist;
 var pont;
 function HTTP(opts, done) {
@@ -136,12 +135,12 @@ HTTP.prototype.buildServer = function(opts) {
       if(topic.indexOf("?")>-1){
     	  
     	  if(topic.indexOf("masterdata")>-1){
-    		  console.log("search for master data");
+    		  //console.log("search for master data");
     		  topicParser.getMasterdataMod(res, topic, "http");
     	  }else{
-    		  console.log("search for topic");
+    		  //console.log("search for topic");
     		  var searchword=topic.substr(topic.indexOf("?")+9);
-    		  console.log(searchword);
+    		  //console.log(searchword);
     		  mongoback.searchForKeywordback(searchword,res,"http");
     		  //mongoback.selectFromPubSubBack(topic, res);
     	  }
@@ -153,16 +152,19 @@ HTTP.prototype.buildServer = function(opts) {
           var topcArray=topic.split("/");
           if(indexoic>-1){
         	  var resourceoic={service:topcArray[1], attribute:topcArray[2]};
-        	  mongoback.selectFromDbBackGET(topic, res,"oic",resourceoic,handleSearchResultGET_H);
+        	  //mongoback.selectFromDbBackGET(topic, res,"oic",resourceoic,handleSearchResultGET_H);
+        	  mongoback.selectFromRedisBackGET(topic, res,resourceoic,handleSearchResultGET_H);
           }else if(indexlwm2m>-1){
         	  var resourcelwm2m={service:topcArray[1], attribute:topcArray[2]};
-        	  mongoback.selectFromDbBackGET(topic,  res, "lwm2m",resourcelwm2m,handleSearchResultGET_H);
+        	  //mongoback.selectFromDbBackGET(topic,  res, "lwm2m",resourcelwm2m,handleSearchResultGET_H);
+        	  mongoback.selectFromRedisBackGET(topic, res,resourcelwm2m,handleSearchResultGET_H);
           }else{
               persistence.lookupRetained(topic, function(err, packets) {
                   if (packets.length === 0) {
                     res.statusCode = 404;
                     res.end('Not found');
                   } else {
+                	  res.statusCode = 200;
                     res.end(packets[0].payload);
                     //res.end("text");
                   }
@@ -208,14 +210,15 @@ HTTP.prototype.buildServer = function(opts) {
           return;
         }
         if(topic.indexOf("masterdata")>-1){
-      	  console.log("payload");
+      	  //console.log("payload");
       	  
-      	  console.log(payload.toString());
+      	  //console.log(payload.toString());
       	  var vart=payload.toString();
       	  try{
       		  var resource=JSON.parse(vart);
       		  mongoback.insertResourcesMasterdataBack("masterData", resource, res,"http");
-var ifaces = os.networkInterfaces( );
+      		
+      		var ifaces = os.networkInterfaces( );
       		var ifacesadress;      		
       		'use strict';
       		Object.keys(ifaces).forEach(function (ifname) {
@@ -271,6 +274,7 @@ var ifaces = os.networkInterfaces( );
       			    }
       			);
 		
+
       		 
       	  }catch(ex){
       		  console.log("error");
@@ -284,23 +288,25 @@ var ifaces = os.networkInterfaces( );
              var indexoic= topic.indexOf("oic");
              var indexlwm2m= topic.indexOf("lwm2m");
              var topcArray=topic.split("/");
-             console.log("indexoic", indexoic);
-             console.log("indexlwm2m", indexlwm2m);
+             //console.log("indexoic", indexoic);
+             //console.log("indexlwm2m", indexlwm2m);
              if(indexoic>-1){
            	  var resourceoic={service:topcArray[1], attribute:topcArray[2]};
-           	  mongoback.selectFromDbBack(topic, payload, res,"oic",resourceoic,handleSearchResult);
+           	//  mongoback.selectFromDbBack(topic, payload, res,"oic",resourceoic,handleSearchResult);
+           	  mongoback.selectFromRedisDbBack(topic, payload, res,resourceoic,handleSearchResult);
              }else if(indexlwm2m>-1){
            	  var resourcelwm2m={service:topcArray[1], attribute:topcArray[2]};
-           	  mongoback.selectFromDbBack(topic, payload, res, "lwm2m",resourcelwm2m,handleSearchResult);
+           	 // mongoback.selectFromDbBack(topic, payload, res, "lwm2m",resourcelwm2m,handleSearchResult);
+           	  mongoback.selectFromRedisDbBack(topic, payload, res,resourcelwm2m,handleSearchResult);
              }else{
              	persistence.storeRetained(packet, function() {
-                 	console.log(packet);
+                 	//console.log(packet);
                    ponte.broker.publish(topic, payload, {}, function() {
                      res.setHeader('Location', '/resources/' + topic);
                      res.statusCode = 204;
                      res.end();
                      ponte.emit('updated', topic, new Buffer(payload));
-                     console.log("Yale: topic  "+ topic);
+                     //console.log("Yale: topic  "+ topic);
                    });
                  });
              }
@@ -407,8 +413,8 @@ handleSearchResult=function (err, result){
 		console.error(err.stack || err.message);
 		return;
 	}
-	console.log("inside handleSearchResultPUTHTTP");
-	console.log(result);
+	//console.log("inside handleSearchResultPUTHTTP");
+	//console.log(result);
 	var packetlocal = { topic: result.topic, payload: result.payload, retain: true };
 	persist.storeRetained(packetlocal, function() {
 		pont.broker.publish(result.topic, result.payload, {}, function() {
@@ -427,15 +433,17 @@ handleSearchResultGET_H=function (err, result){
 		console.error(err.stack || err.message);
 		return;
 	}
-	console.log("inside handleSearchResultGETHTTP");
+	//console.log("inside handleSearchResultGETHTTP");
 	persist.lookupRetained(result.topic, function(err, packets) {
         if (packets.length === 0) {
         	result.res.statusCode = 404;
         	result.res.end('Not found');
         } else {
+        	result.res.statusCode = 200;
         	result.res.end(packets[0].payload);
           //res.end("text");
         }
       });
 };
 module.exports = HTTP;
+

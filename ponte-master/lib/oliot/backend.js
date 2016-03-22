@@ -250,10 +250,10 @@ function insertResourcesMasterdata(collection,resource, res, protocol){
 				//console.log("document inseted");
 				if(protocol==="coap"){
 					 res.statusCode = '2.04';
-				     res.end();
+				     res.end(JSON.stringify(result.ops));
 				}else if(protocol==="http"){
-					res.statusCode = 204;
-                    res.end();
+					res.statusCode = 200;
+                    res.end(JSON.stringify(result.ops));
 				}
 				
 			}
@@ -263,6 +263,36 @@ function insertResourcesMasterdata(collection,resource, res, protocol){
 	});
 }
 
+function deleteResourcesMasterdata(collection,resource, res, protocol){
+	MongoClient.connect("mongodb://localhost:27017/ponte", function(err, db){
+		if(err){
+			console.log("connection problem");
+			return console.dir(err);
+		}
+		var collectionUser=db.collection(collection);
+		collectionUser.deleteMany({"id":resource}, function(err, result){
+			if(err){
+				console.log(err);
+				res[deliver](err);
+			}else{
+				//console.log("document inseted");
+				var source;
+				if(protocol==="coap"){
+					 res.statusCode = '2.04';
+					 source=JSON.parse(result);
+				     res.end(source.n +" row is deleted ");
+				}else if(protocol==="http"){
+					res.statusCode = 200;
+					source=JSON.parse(result);
+                    res.end(source.n +" row is deleted ");
+				}
+				
+			}
+			db.close();
+		});
+		
+	});
+}
 
 function selectFromMasterdata(collection, resource,res,protocol){
 	MongoClient.connect("mongodb://localhost:27017/ponte", function(err, db){
@@ -323,6 +353,7 @@ module.exports.selectFromRedisDbBack=selectFromRedisDb;
 module.exports.selectFromDbBackGET=selectFromDbGET;
 module.exports.selectFromRedisBackGET=selectFromRedisGET;
 module.exports.selectFromPubSubBack=selectFromPubSub;
-module.exports.insertResourcesMasterdataBack=insertResourcesMasterdata;
+module.exports.insertResourcesMasterdataBack=insertResourcesMasterdata; 
+module.exports.deleteResourcesMasterdataBack=deleteResourcesMasterdata;
 module.exports.searchForKeywordback=searchForKeyword;
 module.exports.selectFromMasterdataback=selectFromMasterdata;
